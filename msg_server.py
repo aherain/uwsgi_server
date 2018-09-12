@@ -23,7 +23,7 @@ class customer:
     rule = []
 
     def __init__(self):
-    	self.db = edb.Database('arch2018_dev')
+    	self.db = edb.Database('arch2018')
 
     def setTitle(self,title:str):
         self.title=title

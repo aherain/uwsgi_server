@@ -9,8 +9,8 @@ class App(ewsgi.JrWsgiServer):
 
     def __init__(self):
         super().__init__()
-        self.db = edb.Database('arch2018_dev')
-        self.fdm = edb.Database('fdm_new_dev')
+        self.db = edb.Database('arch2018')
+        self.fdm = edb.Database('fdm_new')
         self.producer_id = 7079
 
         return
@@ -40,20 +40,27 @@ class App(ewsgi.JrWsgiServer):
 
         return acct
 
-    def url__send_msg(self, task_type: int, pid: str, cooperator_id:int, issue_id:str, push_msg:str):
+    def url__send_msg(self, task_type: int, pid: str, name:str, cooperator_id:int, push_msg:str):
         """
         获取options变量
         
         返回值举例
             [option] -> [ API/SQL值, 英文值, 中文值 ]
         """
-        # return '%s_%s_%s_%s_%s' % (task_type, pid, cooperator_id, issue_id, push_msg)
+        # return '%s_%s_%s_%s_%s' % (task_type, pid, cooperator_id, name, push_msg)
+        # 《xxx》可结算分账款通知
+        # 《xxx》发行收入通知
+        map_struct = {1: {'category': 7, 'categoryName': '发行消息', 'senderName': '推送服务', 'title': "《%s》发行收入通知" % name},
+                     2: {'category': 4, 'categoryName': '结算消息', 'senderName': '推送服务', 'title': "《%s》可结算分账款通知" % name}}
+        if task_type not in map_struct:
+            return -1
+
         my_huaying_customer = myhuaying_customer()
-        my_huaying_customer.setCategory(1)
-        my_huaying_customer.setCategoryName('测试')
+        my_huaying_customer.setCategory(map_struct[task_type]['category'])
+        my_huaying_customer.setCategoryName(map_struct[task_type]['categoryName'])
         my_huaying_customer.setSender(1)
-        my_huaying_customer.setSenderName('结算发送服务')
-        my_huaying_customer.setTitle(push_msg[:20])  # 消息标题
+        my_huaying_customer.setSenderName('结算推送服务')
+        my_huaying_customer.setTitle(map_struct[task_type]['title'])  # 消息标题
         my_huaying_customer.setDescription(push_msg)  # 消息提示文本
         my_huaying_customer.setStatus(2)  # 等待发送
         my_huaying_customer.setReceivers(self.get_project_app_users(pid, cooperator_id))  # 手机号或账户
@@ -62,15 +69,14 @@ class App(ewsgi.JrWsgiServer):
         # text_sender = textSender([{"type": 1, "value": "asjhghakdjh"}])
         link = ('/settlement_c/releaseIncome/{}/{}'.format(pid, cooperator_id)) if task_type == 1 else (
         '/settlement_c/pay/{}/{}'.format(pid, cooperator_id)),
-        link_sender = linkSender(link)
-        my_huaying_customer.setLink(link_sender)  # 设置连接
+        my_huaying_customer.setLink(linkSender(link))  # 设置连接
 
         try:
             my_huaying_customer.sndMsg()
         except:
             return -1 #数据写入失败
 
-        return '%s_%s_%s_%s_%s' % (task_type, pid, cooperator_id, issue_id, push_msg)
+        return 1
 
 if __name__.startswith('uwsgi_file_'):
     application = App()
