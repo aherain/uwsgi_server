@@ -33,7 +33,6 @@ class App(ewsgi.JrWsgiServer):
             if cooperator_id in cids :
                 uids.append(u["user_id"])
 
-
         if len(uids) > 0 :
             rs = self.db.acct_users.where_in(user_id = tuple(uids)).select("account")
             acct = [v["account"] for v in rs]

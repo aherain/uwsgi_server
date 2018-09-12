@@ -26,9 +26,34 @@ RE_AFF = re.compile(r'\s*(UPDATE|DELETE)', re.IGNORECASE)
 
 pymysql.converters.conversions[pymysql.constants.FIELD_TYPE.JSON] = json.loads
 
+class Keyword(object):
+    
+    def __init__( self, s ):
+        self.s = s
+        return
+        
+    def __str__( self ):
+        return str(self.s)
+        
+    def __repr__( self ):
+        return repr(self.s)
+    
+    def translate( self, t ):
+        return self
+    
+def escapeKeyword( s, charset, mapping=None ):
+    return str(s)
+
+pymysql.converters.encoders[Keyword] = escapeKeyword
+pymysql.converters.conversions[Keyword] = escapeKeyword
+
+_key = Keyword
+
 
 class OrderedDictCursor(pymysql.cursors.DictCursorMixin, pymysql.cursors.Cursor):
     dict_type = OrderedDict
+
+
 
 
 class DatabaseOne(object):
@@ -110,20 +135,51 @@ class Database(object):
     @classmethod
     def loadconfig(cls, filename="database.yaml"):
 
-        if not os.path.exists(filename):
-            # cls.conf = {}
+        #if not os.path.exists(filename):
+        #    return
+        #
+        #import yaml
+        #
+        #with open(filename, 'r') as fp:
+        #    conf = yaml.load(fp)
+        #
+        #for inc in cfg.get("includes", []):
+        #    cls.loadconfig( inc )
+        #
+        #cls.conf.update(conf)
+        
+        cls._load_config( './', filename, set() )
+        
+        return
+    
+    @classmethod
+    def _load_config( cls, basedir, configfile, loadedset ):
+        
+        cfile = os.path.join( basedir, configfile )
+        cfile = os.path.abspath( cfile )
+        #cfile = os.path.normcase( cfile )
+        basepath, filename = os.path.split(cfile)
+        
+        if not os.path.exists(cfile):
             return
-
+        
+        if cfile in loadedset :
+            return
+        
         import yaml
-
-        with open(filename, 'r') as fp:
+        
+        with open(cfile, 'r') as fp:
             conf = yaml.load(fp)
-
-        # cls.conf = conf
+        
+        loadedset.add(cfile)
+        
+        for inc in conf.get("includes", []):
+            cls._load_config( basepath, inc, loadedset )
+        
         cls.conf.update(conf)
 
         return
-
+    
     def get_charset(self):
         return self._dbargs.get('charset', 'utf8mb4')
 
@@ -138,19 +194,29 @@ class Database(object):
         dbargs.update(kwargs)
 
         self._dbargs = dbargs
-
+        
         self.init2()
 
         return
 
     def init2(self):
 
+        self.lastconntime = time.time()
+        
         self.tvar = threading.local()
         self.tvar.conn = self.make_conn()
 
         return
 
     def get_conn(self):
+        
+        now = time.time()
+        if ( now - self.lastconntime > 10 ):
+            self.tvar.conn = self.make_conn()
+            return self.tvar.conn
+        
+        self.lastconntime = now
+        
         try:
             return self.tvar.conn
         except:
@@ -162,7 +228,7 @@ class Database(object):
 
     def drop_conn(self, conn, e):
 
-        if e.args[0] in (2006,):
+        if e.args[0] in (0, 2006, 2013):
             self.tvar.conn = self.make_conn()
 
         return
@@ -194,7 +260,6 @@ class Database(object):
 
                 with conn.cursor(cursor) as csr:
                     csr._defer_warnings = True
-                    # print(sql, args)
                     csr.execute(sql, args)
                     if csr.description:
                         r = csr.fetchall()
@@ -239,106 +304,54 @@ class Database(object):
     def __getattr__(self, key):
         return Expr(self, key)
 
-    # def _get_redirect(self, pth, table, auth):
-    #
-    #     try:
-    #         conn = http.client.HTTPConnection(host=self._dbargs['host'], port=8030)
-    #         conn.request('PUT', pth, b'', {'Authorization': auth, 'Expect': '100-continue'})
-    #     except Exception as e:
-    #         print(e)
-    #         raise
-    #
-    #     resp = conn.getresponse()
-    #     hds = dict(resp.getheaders())
-    #
-    #     if resp.status == 307:
-    #         return hds['Location']
-    #
-        # return
+    def _get_redirect(self, pth, table, auth):
+
+        try:
+            conn = http.client.HTTPConnection(host=self._dbargs['host'], port=8030)
+            conn.request('PUT', pth, b'', {'Authorization': auth, 'Expect': '100-continue'})
+        except Exception as e:
+            print(e)
+            raise
+
+        resp = conn.getresponse()
+        hds = dict(resp.getheaders())
+
+        if resp.status == 307:
+            return hds['Location']
+
+        return
 
     def upload_csv(self, table, label, csvfile):
 
-        # with open(csvfile, 'rb') as fp:
-        #     csvfilecontent = fp.read()
-        #
-        # urlpth = '/api/%s/%s/_load?label=%s&column_separator=,' % (self._dbargs['db'], table, label)
-        #
-        # auth = "%s:%s" % (self._dbargs['user'], self._dbargs.get('passwd', ''))
-        # auth = base64.b64encode(auth.encode('ascii'))
-        # auth = b'Basic ' + auth
-        #
-        # url = self._get_redirect(urlpth, table, auth)
-        #
-        # if url == None:
-        #     return
-        #
-        # req = urllib.request.Request(
-        #     url,
-        #     headers={'Authorization': auth, 'Expect': '100-continue'},
-        #     data=csvfilecontent,
-        #     method='PUT',
-        # )
-        #
-        # try:
-        #     r = urllib.request.urlopen(req).read()
-        #     r = json.loads(r.decode('utf-8'))
-        #
-        # except Exception as e:
-        #     print('request error ', e)
-        #
-        # return r
-        result = False
+        with open(csvfile, 'rb') as fp:
+            csvfilecontent = fp.read()
 
-        urlpth = 'http://%s:%s/api/%s/%s/_load?label=%s&column_separator=,' % (self._dbargs['host'], 8030, self._dbargs['db'], table, label)
+        urlpth = '/api/%s/%s/_load?label=%s&column_separator=,' % (self._dbargs['db'], table, label)
 
         auth = "%s:%s" % (self._dbargs['user'], self._dbargs.get('passwd', ''))
         auth = base64.b64encode(auth.encode('ascii'))
         auth = b'Basic ' + auth
 
-        headers = {
-          'Authorization': auth,
-          'Expect': '100-continue',
-          'Content-Length': os.path.getsize(csvfile),
-        }
+        url = self._get_redirect(urlpth, table, auth)
 
-        redirect_cnt = 0
+        if url == None:
+            return
 
-        while redirect_cnt < 5:
+        req = urllib.request.Request(
+            url,
+            headers={'Authorization': auth, 'Expect': '100-continue'},
+            data=csvfilecontent,
+            method='PUT',
+        )
 
-            url_info = urllib.parse.urlparse(urlpth)
+        try:
+            r = urllib.request.urlopen(req).read()
+            r = json.loads(r.decode('utf-8'))
 
-            with open(csvfile, 'rb') as fp:
+        except Exception as e:
+            print('request error ', e)
 
-                try:
-                    conn = http.client.HTTPConnection(url_info.netloc)
-                    conn.request('PUT', '%s?%s' % (url_info.path, url_info.query), body=fp, headers=headers)
-                    resp = conn.getresponse()
-
-                    if resp.status == 200:
-
-                        result = True
-                        break
-
-                    elif resp.status == 307:
-
-                        heads = dict(resp.getheaders())
-                        urlpth = heads['Location']
-                        print('redirect url:', urlpth)
-                        redirect_cnt += 1
-
-                    else:
-
-                        break
-
-                except Exception as e:
-                    print('request error ', e)
-                    result = False
-
-        else:
-
-            print('redirect too many times.')
-
-        return result
+        return r
 
     def upload_status(self, label):
 
@@ -442,7 +455,7 @@ class Expr(object):
         self._conn = conn
 
         self.tbl_name = table  # table_references
-        self.tbl_alias = None
+        self.tbl_alias = None  # table_references
 
         self.join_expr = []
         self.join_values = []
@@ -476,12 +489,30 @@ class Expr(object):
         else:
             self.where_negative_cnt += len(conds)
 
+        if self.tbl_alias:
+            fmt = '`{0}`.{1}'.format(self.tbl_alias, fmt)
+
         self.where_expr.extend([fmt.format(*c, v=','.join(['%s'] * len(c[-1]))) for c in conds])
         self.where_args.extend([v for c in conds for v in c[-1]])
 
         return self
 
     def force(self, required=1):
+        """
+        执行 update 与 delete 操作时，默认情况下必须有 where 条件才能执行
+        此函数用于设置 where 条件数量，使 update 和 delete 操作按照预期的方式安全执行
+
+        概念
+        正向条件，例如 where( a = 1, b = 2) 的调用，使正向条件数增加 2
+        负向条件，例如 where_neq(a = 1 , b = 2, c = 3) 的调用，使负向条件数增加 3
+
+        参数说明
+        1.最多两个元素，最少一个元素的 tuple，第一个元素表示正向条件数，第二个元素表示负向条件数
+          若只有一个元素，这个值表示正向条件数，负向条件数为 0
+        2.int 整数，表示正向条件数
+
+        执行 update 和 delete 操作之前，如果发现实际的正向条件数和负向条件数，达不到 force 函数所设置的数量，将抛出异常
+        """
         if isinstance(required, tuple) and len(required) == 2:
             self.where_force = (required[0], required[1], required[0] + required[1])
         elif isinstance(required, tuple) and len(required) == 1:
@@ -493,72 +524,117 @@ class Expr(object):
 
         return self
 
+    
+    @staticmethod
+    def _setvalue( v ):
+        
+        if inspect.isgenerator(v):
+            v = list(v)
+            
+        if type(v) not in (list, tuple, set):
+            raise Exception('arg of where_in must be list, tuple, set or generator.')
+            
+        return v
+    
+    def filter( self, _op, kwargs, _none_ignore=False ):
+        
+        _op = _op.upper().strip()
+        p = {
+            '=': True,
+            '!=': False,
+            '>': True,
+            '<': True,
+            '>=': True,
+            '<=': True,
+            'IN': True,
+            'NOT IN': False,
+            'LIKE': False,
+            'NOT LIKE': False,
+        }[_op]
+        
+        if _op in ('IN', 'NOT IN'):
+            conds = [(self._colsafe(k), self._setvalue(v)) for k, v in kwargs.items() ]
+            conds = [ ( k, v ) for k, v in conds if len(v) != 0 ]
+            return self._where(p, ('{0} %s ({v})' % _op), conds)
+        
+        conds = [(self._colsafe(k), [v]) for k, v in kwargs.items() if _none_ignore == False or v is not None]
+        return self._where(p, ('{0} %s {v}' % _op), conds)
+
     def table_as(self, alias):
         self.tbl_alias = alias
+        return self
 
     def where(self, _none_ignore=False, **kwargs):
+        """
+        eg. where(a=1, b=2)
+        eg. where(a=1, b=None) 此时参数 b 会被当作 b = NULL
+        eg. where(True, a=1, b=None) 此时参数 b 会被忽略
+        """
         conds = [(k, [v]) for k, v in kwargs.items() if _none_ignore == False or v is not None]
         return self._where(True, '`{0}`={v}', conds)
 
     def where_not_eq(self, _none_ignore=False, **kwargs):
+        """
+        参考 Expr 类的 where 函数
+        """
         conds = [(k, [v]) for k, v in kwargs.items() if _none_ignore == False or v is not None]
         return self._where(False, '`{0}`!={v}', conds)
 
     where_neq = where_not_eq
 
     def where_gt(self, _none_ignore=False, **kwargs):
+        """
+        参考 Expr 类的 where 函数
+        """
         conds = [(k, [v]) for k, v in kwargs.items() if _none_ignore == False or v is not None]
         return self._where(True, '`{0}`>{v}', conds)
 
     def where_lt(self, _none_ignore=False, **kwargs):
+        """
+        参考 Expr 类的 where 函数
+        """
         conds = [(k, [v]) for k, v in kwargs.items() if _none_ignore == False or v is not None]
         return self._where(True, '`{0}`<{v}', conds)
 
     def where_ge(self, _none_ignore=False, **kwargs):
+        """
+        参考 Expr 类的 where 函数
+        """
         conds = [(k, [v]) for k, v in kwargs.items() if _none_ignore == False or v is not None]
         return self._where(True, '`{0}`>={v}', conds)
 
     def where_le(self, _none_ignore=False, **kwargs):
+        """
+        参考 Expr 类的 where 函数
+        """
         conds = [(k, [v]) for k, v in kwargs.items() if _none_ignore == False or v is not None]
         return self._where(True, '`{0}`<={v}', conds)
 
     def where_in(self, **kwargs):
-
-        conds = []
-        for k, v in kwargs.items():
-
-            if inspect.isgenerator(v):
-                v = list(v)
-            if type(v) not in (list, tuple, set):
-                raise Exception('arg of where_in must be list, tuple, set or generator.')
-
-            if len(v) == 0:
-                continue
-
-            conds.append((k, v))
+        """
+        eg. where_in(a=(1,2,3))
+        """
+        conds = [ ( k, self._setvalue(v) ) for k, v in kwargs.items() ]
+        conds = [ ( k, v ) for k, v in conds if len(v) != 0 ]
 
         return self._where(True, '`{0}` IN ({v})', conds)
 
     def where_not_in(self, **kwargs):
-
-        conds = []
-        for k, v in kwargs.items():
-
-            if inspect.isgenerator(v):
-                v = list(v)
-            if type(v) not in (list, tuple, set):
-                raise Exception('arg of where_in must be list, tuple, set or generator.')
-
-            if len(v) == 0:
-                continue
-
-            conds.append((k, v))
+        """
+        eg. where_nin(a=(1,2,3))
+        """
+        conds = [ ( k, self._setvalue(v) ) for k, v in kwargs.items() ]
+        conds = [ ( k, v ) for k, v in conds if len(v) != 0 ]
 
         return self._where(False, '`{0}` NOT IN ({v})', conds)
 
     where_nin = where_not_in
 
     def where_like(self, _like_format=None, **kwargs):
+        """
+        eg. where_like(a='hello')
+        eg. where_like('%{}%',a='hello')
+        """
 
         conds = list(kwargs.items())
         if _like_format:
@@ -569,15 +645,28 @@ class Expr(object):
     like = where_like
 
     def contains(self, **kwargs):
+        """
+        eg. contains(a='abc') 相当于 LIKE '%abc%'
+        """
         return self.where_like('%{}%', **kwargs)
 
     def startswith(self, **kwargs):
-        return self.where_like('%{}', **kwargs)
-
-    def endswith(self, **kwargs):
+        """
+        eg. contains(a='abc') 相当于 LIKE 'abc%'
+        """
         return self.where_like('{}%', **kwargs)
 
+    def endswith(self, **kwargs):
+        """
+        eg. contains(a='abc') 相当于 LIKE '%abc'
+        """
+        return self.where_like('%{}', **kwargs)
+
     def where_not_like(self, _like_format=None, **kwargs):
+        """
+        eg. where_like(a='hello')
+        eg. where_like('%{}%',a='hello')
+        """
 
         conds = list(kwargs.items())
         if _like_format:
@@ -610,7 +699,7 @@ class Expr(object):
 
             if type(k2) == tuple:
                 if len(k2) == 1:
-                    conds.append('`{0}`.`{1}` = `{2}`.`{3}`'.format(_tbl, k1, self.tbl_name, *k2))
+                    conds.append('`{0}`.`{1}` = `{2}`.`{3}`'.format(_tbl, k1, self.tbl_alias if self.tbl_alias else self.tbl_name, *k2))
                 elif len(k2) == 2:
                     conds.append('`{0}`.`{1}` = `{2}`.`{3}`'.format(_tbl, k1, *k2))
             else:
@@ -624,7 +713,11 @@ class Expr(object):
         return self
 
     def join(self, tablename, alias=None, **kwargs):
-
+        """
+        eg. table0.join('table1', 't', id=('table0','id',))
+                  .join('table1', 'c', a=('a',))
+                  .select(('table0', all), ('t', 'g'),('t', 'e', 'eee'))
+        """
         if len(kwargs) < 1:
             raise Exception('must have 1 least cond when join a table.')
 
@@ -632,7 +725,10 @@ class Expr(object):
 
     @staticmethod
     def _colsafe(col):
-
+        
+        if isinstance(col,Keyword):
+            return str(col)
+        
         if type(col) == tuple:
 
             if len(col) == 3:
@@ -655,15 +751,23 @@ class Expr(object):
         return '`{}`'.format(col)
 
     def groupby(self, *args):
+        """
+        eg. groupby('col_a', ('table1', all) ,('table1', 'col_a'), ('table1', 'col_b', 'col_b_alias') )
+        """
         self.group_by_cols = [self._colsafe(a) for a in args]
         return self
 
     def orderby(self, *args):
+        """
+        eg. orderby('col_a', ('table1', all) ,('table1', 'col_a'), ('table1', 'col_b', 'col_b_alias') )
+        """
         self.order_by_cols = [self._colsafe(a) for a in args]
         return self
 
     def desc(self):
-
+        """
+        eg. desc()
+        """
         if self.order_by_cols:
             self.order_by_desc = True
         else:
@@ -672,11 +776,16 @@ class Expr(object):
         return self
 
     def limit(self, i):
+        """
+        eg. limit(5)
+        """
         self.limit_expr = 'LIMIT %s' % int(i)
         return self
 
     def offset(self, i):
-
+        """
+        eg. offset(5)
+        """
         if self.limit_expr is None:
             raise Exception('can not offset before limit')
 
@@ -709,13 +818,13 @@ class Expr(object):
     #    [FOR UPDATE | LOCK IN SHARE MODE]]
 
     def _select_makeup(self, cols, forupdate):
-        return '''SELECT {COLS} FROM {TBL} {ALIAS}
+        return '''SELECT {COLS} FROM {TBL} {AS}
 {JOIN_EXPR} {WHERE} {WHERE_EXPR} 
 {GROUPBY} {GROUPBY_COLS} {ORDERBY} {ORDERBY_COLS} {DESC}
 {LIMIT} {OFFSET} {FORUPDATE}'''.format(
             COLS=','.join(cols),
             TBL=self.tbl_name,
-            ALIAS= 'AS ' + self.tbl_alias if self.tbl_alias else '',
+            AS='AS ' + self.tbl_alias if self.tbl_alias else '',
             WHERE='WHERE' if self.where_expr else '',
             WHERE_EXPR=' AND '.join(self.where_expr),
             JOIN_EXPR=' '.join(self.join_expr),
@@ -733,20 +842,43 @@ class Expr(object):
         return tuple(self.where_args)
 
     def select(self, *args):
+        """
+        eg. select('user_id', 'user_name',  )
+
+        和其他表 join 时，为了避免字段名冲突，可以这样写
+        eg. select(('tableA', 'user_id', 'user_id_alias'),)
+        eg. select(('tableA', 'user_id'), ('tableB', 'email'),)
+        eg. select(('tableA', all),)
+        """
         cols = [self._colsafe(a) for a in args]
         cols = cols if cols else ['*']
         return self._conn(self._select_makeup(cols, False), self._select_values())
 
     def select_for_update(self, *args):
+        """
+        eg. select('user_id', 'user_name',  )
+
+        和其他表 join 时，为了避免字段名冲突，可以这样写
+        eg. select(('tableA', 'user_id', 'user_id_alias'),)
+        eg. select(('tableA', 'user_id'), ('tableB', 'email'),)
+        eg. select(('tableA', all),)
+        """
         cols = [self._colsafe(a) for a in args]
         cols = cols if cols else ['*']
         return self._conn(self._select_makeup(cols, True), self._select_values())
 
     def count(self):
+        """
+        eg. one()
+        """
         cols = ['COUNT(1)']
         return self._conn(self._select_makeup(cols, False), self._select_values())[0][cols[0]]
 
     def one(self, col=None, default=None):
+        """
+        eg. one(col)
+        eg. one(col,'无结果')
+        """
 
         self.limit_expr = 'LIMIT 1'
         self.offset_expr = None
@@ -761,7 +893,52 @@ class Expr(object):
             return r[0]
 
         return list(r[0].values())[0]
+    
+    def one_for_update( self, col=None, default=None ):
+    
+        self.limit_expr = 'LIMIT 1'
+        self.offset_expr = None
 
+        cols = [self._colsafe(col)] if col else ['*']
+        r = self._conn(self._select_makeup(cols, True), self._select_values())
+
+        if len(r) == 0:
+            return default
+
+        if col == None:
+            return r[0]
+
+        return list(r[0].values())[0]
+
+    def unique(self, *args, default=None):
+        """
+        eg. unique(col_a, col_b, col_c)
+        eg. unique(col_a, col_b, col_c,  default='无结果')
+        """
+
+        cols = [self._colsafe(a) for a in args] if args else ['*']
+        r = self._conn(self._select_makeup(cols, False), self._select_values())
+
+        if len(r) != 1:
+            return default
+
+        return r[0]
+
+    def unique_for_update( self, *args, default=None ):
+        """
+        eg. unique_for_update(col_a, col_b, col_c)
+        eg. unique_for_update(col_a, col_b, col_c,  default='无结果')
+        """
+
+        cols = [self._colsafe(a) for a in args] if args else ['*']
+        r = self._conn(self._select_makeup(cols, True), self._select_values())
+
+        if len(r) != 1:
+            return default
+
+        return r[0]
+    
+    
     # INSERT [LOW_PRIORITY | DELAYED | HIGH_PRIORITY] [IGNORE]
     #    [INTO] tbl_name
     #    [PARTITION (partition_name [, partition_name] ...)]
@@ -810,37 +987,58 @@ SET {ASSIGNMENT}
         self._ondup('`{0}`=`{0}`+({v})', list(kwargs.items()))
         return self
 
-    def append(self, d):
-
+    def append(self, d, *, ignore=False, jsoncol=False):
+        """
+        eg. append({'a':55555, 'b':4444})
+        """
         assignments = list(d.items())
-
+        
+        if jsoncol :
+            assignments = [ (k, json.dumps(v) if type(v) in (dict,list,tuple) else v ) for k, v in assignments ]
+        
         self.write_expr += ["`{0}`={v}".format(k, v='%s') for k, v in assignments]
         self.write_args += [v for k, v in assignments]
 
         return self._conn(self._insert_makeup(), self._insert_values())
 
     def insert(self, **kwargs):
-
+        """
+        insert(a='value0', b='value1')
+        """
         return self.append(kwargs)
 
-    def extend(self, datas, lot=100):
+    def extend(self, datas, *, lot=100, ignore=False, jsoncol=False):
+        """
+        eg. extend([{'a':'value0', 'b':'value1'}, {'a':'value2', 'b':'value3'}])
+        eg. extend([{'a':'value0', 'b':'value1'}, {'a':'value2', 'b':'value3'}] * 1000, 10)
+        :param datas: 一个字典为一行数据，放在一个 list 或者 tuple 中
+        :param lot: 对写入 sql 包含的数据行数进行切分
+        """
 
         if len(datas) < lot:
             keys = set([k for d in datas for k in d.keys()])
             keys = list(keys)
         else:
             keys = self._conn.tuple(
-                'select COLUMN_NAME from information_schema.COLUMNS where table_name="{0}"'.format(self.tbl_name))
+                '''select COLUMN_NAME from information_schema.COLUMNS
+                   where table_name="{0}" and table_schema = "{1}"
+                                          and EXTRA!="VIRTUAL GENERATED"
+                '''.format(self.tbl_name, self._conn._dbargs['db']))
             keys = [k for (k,) in keys]
 
         key_expr = ','.join(['`%s`' % k for k in keys])
 
         chrset = self._conn.get_charset()
+        ignore_word = 'IGNORE' if ignore else ''
 
         for i in range(0, len(datas), lot):
-            values = [pymysql.escape_sequence([d.get(k, None) for k in keys], chrset) for d in datas[i:i + lot]]
+            values = [ [d.get(k, Keyword('default')) for k in keys] for d in datas[i:i+lot] ]
+            if jsoncol :
+                values = [ [ (json.dumps(v) if type(v) in (dict,list,tuple) else v) for v in vs ] for vs in values ]
+            values = [ pymysql.escape_sequence(vs, chrset) for vs in values ]
+            #values = [pymysql.escape_sequence([d.get(k, None) for k in keys], chrset) for d in datas[i:i + lot]]
             value_expr = ','.join(values)
-            expr = 'INSERT INTO {0} ({1}) VALUES {2}'.format(self.tbl_name, key_expr, value_expr)
+            expr = 'INSERT {0} INTO {1} ({2}) VALUES {3}'.format(ignore_word, self.tbl_name, key_expr, value_expr)
             self._conn(expr)
 
         return
@@ -855,7 +1053,9 @@ SET {ASSIGNMENT}
         return tuple(self.write_args)
 
     def add(self, d):
-
+        """
+        eg. add({'a':'value0', 'b':'value1'})
+        """
         assignments = list(d.items())
 
         self.write_expr += ["`{0}`={v}".format(k, v='%s') for k, v in assignments]
@@ -886,6 +1086,10 @@ SET {ASSIGNMENT}
         return tuple(self.write_args + self.where_args)
 
     def update(self, **kwargs):
+        """
+        eg. update(a='new_value', b='new_value')
+        安全性设置详见 Expr 类的 force 函数
+        """
         if self.where_force is None:
             self.where_force = (1, 0, 1)
 
@@ -916,6 +1120,10 @@ SET {ASSIGNMENT}
         return tuple(self.where_args)
 
     def delete(self):
+        """
+        eg. delete()
+        安全性设置详见 Expr 类的 force 函数
+        """
         if self.where_force is None:
             self.where_force = (1, 0, 1)
 

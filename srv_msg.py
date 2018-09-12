@@ -47,7 +47,7 @@ class App(ewsgi.JrWsgiServer):
         返回值举例
             [option] -> [ API/SQL值, 英文值, 中文值 ]
         """
-        return '%s_%s_%s_%s_%s' % (task_type, pid, cooperator_id, issue_id, push_msg)
+        # return '%s_%s_%s_%s_%s' % (task_type, pid, cooperator_id, issue_id, push_msg)
         my_huaying_customer = myhuaying_customer()
         my_huaying_customer.setCategory(1)
         my_huaying_customer.setCategoryName('测试')
@@ -70,7 +70,7 @@ class App(ewsgi.JrWsgiServer):
         except:
             return -1 #数据写入失败
 
-        return 1
+        return '%s_%s_%s_%s_%s' % (task_type, pid, cooperator_id, issue_id, push_msg)
 
 if __name__.startswith('uwsgi_file_'):
     application = App()

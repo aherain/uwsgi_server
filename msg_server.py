@@ -22,9 +22,8 @@ class customer:
     show_platform = 'all'
     rule = []
 
-    def  __init__(self):
-    	self.db = edb.Database('arch2018')
-
+    def __init__(self):
+    	self.db = edb.Database('arch2018_dev')
 
     def setTitle(self,title:str):
         self.title=title

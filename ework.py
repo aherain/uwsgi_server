@@ -5,6 +5,15 @@ import traceback
 import asyncio
 import threading
 
+__allow_run = True
+
+try:
+    import uwsgi
+    if 'asyncio' not in uwsgi.opt:
+        __allow_run = False
+except :
+    pass
+
 
 # import asyncio
 # 
@@ -28,6 +37,8 @@ import threading
 
 
 class Worker(object):
+    
+    
     
     def __init__( self, func, sleep=None, crons=[], precond=[], timelimit=None ):
         
@@ -102,4 +113,123 @@ class Worker(object):
         return task
 
 def worker( sleep=None, cron=[], precond=[], timelimit=None ):
+    
+    usage = 'cron argument must be [(t.tm_min, t.tm_hour, t.tm_mday, t.tm_mon, t.tm_wday)] eg: [(0,2,-1,-1,-1)] is for every day 2:00AM to work.'
+    
+    if type(cron) != list :
+        raise Excpetion(usage)
+    
+    for x in cron :
+        if type(x) != tuple or len(x) != 5 :
+            raise Excpetion(usage)
+        
     return lambda f : Worker( f, sleep, cron, precond, timelimit )
+
+
+class AsyncPipeline( object ):
+    
+    def __init__( self ):
+        
+        self.loop = asyncio.new_event_loop()
+        
+        self._works = {}
+        self._crons = []
+        for methodname in dir(self):
+            
+            m = getattr( self, methodname )
+            
+            if type(m) != Worker:
+                continue
+            
+            t = m.makeTask(self)
+            setattr( self, methodname, t )
+            self._works[methodname] = t
+            
+            for c in m.crons :
+                self._crons.append( (methodname, c) )
+            
+        self._cm = asyncio.Task( self._cron_serv(), loop=self.loop )
+        
+        return
+    
+    def _run( self ):
+        
+        #loop = asyncio.get_event_loop()
+        asyncio.set_event_loop(self.loop)
+        
+        tasks = list(self._works.values())
+        self.loop.run_until_complete( asyncio.wait(tasks) )
+        
+        return
+    
+    def run( self ):
+        
+        if __allow_run == False :
+            raise Exception('in wsgi process, you must run it in asyncmode')
+        
+        asyncthread = threading.Thread(target=self._run)
+        asyncthread.start()
+        
+        return
+    
+    async def _cron_serv( self ):
+        
+        cur = time.time()
+        cur = cur - time.localtime(cur).tm_sec
+        
+        while True:
+            
+            nxt = 61 - time.localtime().tm_sec
+            await asyncio.sleep(nxt)
+            
+            try :
+                while( cur+60 < time.time() ):
+                    
+                    cur += 60
+                    
+                    t = time.localtime(cur)
+                    t = (t.tm_min, t.tm_hour, t.tm_mday, t.tm_mon, t.tm_wday)
+                    
+                    print('CRON scheduler @', *t)
+                    
+                    for m, c in self._crons:
+                        #print(t, c, m)
+                        #print(list([ ( bool((it%ic) == 0) if ic < 0 else bool(it==ic) ) for it, ic in zip(t,c) ]))
+                        if all([ ( bool((it%ic) == 0) if ic < 0 else bool(it==ic) ) for it, ic in zip(t,c) ]):
+                            print('CRON TOUCH %s %s' % (m, c) )
+                            self._works[m].touch()
+                            
+            except Exception as e :
+                #print(e)
+                traceback.print_exc()
+                raise
+                
+        return
+    
+    async def wait( self ):
+        
+        task = asyncio.Task.current_task()
+        
+        if not task.init.is_set():
+            task.init.set()
+        
+        task.count += 1
+        
+        print('TASK %s STOP' % task.name)
+        
+        r = None
+        try :
+            await asyncio.wait_for( task.event.wait(), task.sleep )
+            task.event.clear()
+            task.touchsign = False
+            r = task.hint
+            task.hint = set()
+        except asyncio.TimeoutError :
+            pass
+        
+        print('TASK %s START $ %s' % (task.name, time.asctime()) )
+        
+        return r
+        
+        
+        
