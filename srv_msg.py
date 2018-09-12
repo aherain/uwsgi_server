@@ -9,7 +9,7 @@ class App(ewsgi.JrWsgiServer):
 
     def __init__(self):
         super().__init__()
-        self.db = edb.Database('arch2018')
+        self.db = edb.Database('arch2018_dev')
         self.fdm = edb.Database('fdm')
         self.producer_id = 7079
 
@@ -40,14 +40,14 @@ class App(ewsgi.JrWsgiServer):
 
         return acct
 
-    def url__send_msg(self, pid: str, cooperator_id:int, issue_id:str, push_msg:str):
+    def url__send_msg(self, task_type: int, pid: str, cooperator_id:int, issue_id:str, push_msg:str):
         """
         获取options变量
         
         返回值举例
             [option] -> [ API/SQL值, 英文值, 中文值 ]
         """
-        return '%s_%s_%s_%s' % (pid, cooperator_id, issue_id, push_msg)
+        return '%s_%s_%s_%s_%s' % (task_type, pid, cooperator_id, issue_id, push_msg)
         my_huaying_customer = myhuaying_customer()
         my_huaying_customer.setCategory(1)
         my_huaying_customer.setCategoryName('测试')
@@ -60,9 +60,16 @@ class App(ewsgi.JrWsgiServer):
         my_huaying_customer.setReminds({"data": {}, "is_all": 1})
         my_huaying_customer.setShowPlatform('all')
         # text_sender = textSender([{"type": 1, "value": "asjhghakdjh"}])
-        link_sender = linkSender('/link')
+        link = ('/settlement_c/releaseIncome/{}/{}'.format(pid, cooperator_id)) if task_type == 1 else (
+        '/settlement_c/pay/{}/{}'.format(pid, cooperator_id)),
+        link_sender = linkSender(link)
         my_huaying_customer.setLink(link_sender)  # 设置连接
-        my_huaying_customer.sndMsg()
+
+        try:
+            my_huaying_customer.sndMsg()
+        except:
+            return -1 #数据写入失败
+
         return 1
 
 if __name__.startswith('uwsgi_file_'):

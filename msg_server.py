@@ -93,6 +93,7 @@ class customer:
 
 
     def sndMsg(self):
+
         self.db.sys_msg.insert(
             category = self.category,
             category_name = self.category_name,
@@ -168,5 +169,5 @@ if  __name__=="__main__":
     text_sender = textSender([{"type": 1, "value": "asjhghakdjh"}])
     link_sender = linkSender('/link')
     my_huaying_customer.setLink(link_sender) #设置连接
-    my_huaying_customer.sndMsg()
+    a = my_huaying_customer.sndMsg()
 
