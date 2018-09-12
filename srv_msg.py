@@ -10,7 +10,7 @@ class App(ewsgi.JrWsgiServer):
     def __init__(self):
         super().__init__()
         self.db = edb.Database('arch2018_dev')
-        self.fdm = edb.Database('fdm')
+        self.fdm = edb.Database('fdm_new_dev')
         self.producer_id = 7079
 
         return
