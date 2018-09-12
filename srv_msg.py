@@ -3,7 +3,7 @@ import time
 import ewsgi
 import ework
 import edb
-from .msg_server import *
+from msg_server import *
 import json
 class App(ewsgi.JrWsgiServer):
 
