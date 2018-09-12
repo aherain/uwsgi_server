@@ -50,7 +50,7 @@ class App(ewsgi.JrWsgiServer):
         # return '%s_%s_%s_%s_%s' % (task_type, pid, cooperator_id, name, push_msg)
         # 《xxx》可结算分账款通知
         # 《xxx》发行收入通知
-        map_struct = {1: {'category': 7, 'categoryName': '发行消息', 'senderName': '推送服务', 'title': "《%s》发行收入通知" % name},
+        map_struct = {1: {'category': 4, 'categoryName': '结算消息', 'senderName': '推送服务', 'title': "《%s》发行收入通知" % name},
                      2: {'category': 4, 'categoryName': '结算消息', 'senderName': '推送服务', 'title': "《%s》可结算分账款通知" % name}}
         if task_type not in map_struct:
             return -1
