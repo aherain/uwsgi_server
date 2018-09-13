@@ -1,6 +1,6 @@
 
-#UWSGI提供API服务案例
-###一，定义APP服务程序：
+UWSGI提供API服务案例
+一，定义APP服务程序：
 格式：
 
 import time
@@ -19,14 +19,14 @@ if __name__.startswith('uwsgi_file_'):
     application = App()
 
 
-###二，需要文件包的说明：
+二，需要文件包的说明：
 1，ewsgi 负责路由的解析与分发请求
 
 2，edb 负责数据库连接，解析数据库配置，封装SQL查询
 
 
 
-###三，配置文件的说明：
+三，配置文件的说明：
 1，database.yaml 文件内容格式：
 数据库别名1：
 
@@ -66,6 +66,6 @@ if __name__.startswith('uwsgi_file_'):
 
 
 
-###四，启动wsgi服务命令：
+四，启动wsgi服务命令：
  uwsgi -y /目录/wsgiflow.yaml:服务程序别名xxx
 
